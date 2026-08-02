@@ -1,0 +1,36 @@
+{
+  "title": "K811 Studio device-specific remaps",
+  "rules": [
+    {
+      "description": "K811: Command+Escape to Command+Q",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "escape",
+            "modifiers": {
+              "mandatory": ["left_command"]
+            }
+          },
+          "to": [
+            {
+              "key_code": "q",
+              "modifiers": ["left_command"]
+            }
+          ],
+          "conditions": [
+            {
+              "type": "device_if",
+              "identifiers": [
+                {
+                  "vendor_id": 21862,
+                  "product_id": 10
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
