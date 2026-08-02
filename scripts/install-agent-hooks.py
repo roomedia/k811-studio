@@ -181,6 +181,8 @@ def main() -> int:
         ("SessionStart", hook_group(claude_command)),
         # 세션을 그냥 닫았을 때 그 세션의 알림을 정리한다.
         ("SessionEnd", hook_group(claude_command)),
+        # 정상 종료. 이게 없으면 Claude 만 완료 신호가 없어 실패등만 보인다.
+        ("Stop", hook_group(claude_command)),
         ("StopFailure", hook_group(claude_command)),
     ]
     if "claude" in selected_sources:

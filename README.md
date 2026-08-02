@@ -87,6 +87,7 @@ Both apply to hook-driven signals. The `emit` command stays unconditional so man
 | | `Notification` (`permission_prompt`) | approval |
 | | `Notification` (`elicitation_dialog`, `agent_needs_input`) | question |
 | | `Notification` (`elicitation_complete`, `elicitation_response`) | clear |
+| | `Stop` | completion |
 | | `StopFailure` | failure |
 | | `UserPromptSubmit`, `SessionStart`, `SessionEnd` | clear |
 | Codex | `PermissionRequest` | approval |
@@ -99,6 +100,8 @@ Both apply to hook-driven signals. The `emit` command stays unconditional so man
 | OpenCode | `permission.asked` | approval |
 | | `session.idle` / `session.error` | completion / failure |
 | | `permission.replied`, `session.status` = busy | clear |
+
+Codex and Hermes have no event that says "the agent is asking you something", so they guess from a question mark at the end of the reply. Claude Code does not need that guess — it raises questions and approvals as their own `Notification` events — so its `Stop` always means completion. Applying the same heuristic there would paint an ordinary answer containing a question mark as a question.
 
 Every clear is scoped to the session that emitted it. `SessionEnd` exists for exactly one reason: with session-scoped clears, a session that is simply closed would otherwise leave its light on forever — the 24-hour prune only runs when some later hook fires. Codex and OpenCode have no session-end event, so a closed session there is retired by the next `SessionStart`/`UserPromptSubmit` in that same session, or by `k811-agent-event clear --all`.
 

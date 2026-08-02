@@ -143,6 +143,11 @@ private func claudeSignal(from payload: HookPayload) -> K811AgentSignal? {
         kind = .clear
     case "StopFailure":
         kind = .failure
+    // Codex·Hermes 는 종료 시점에 질문 여부를 알 길이 없어 응답 끝의 물음표로 추측하지만,
+    // Claude 는 질문·승인을 Notification 으로 따로 보내주므로 추측할 이유가 없다.
+    // 여기서 같은 추측을 하면 물음표가 섞인 보통 응답까지 질문으로 잡힌다.
+    case "Stop":
+        kind = .completed
     case "Notification":
         switch payload.notificationType {
         case "idle_prompt":
