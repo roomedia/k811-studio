@@ -77,6 +77,31 @@ Completion auto-off keeps the no-resident-daemon property: recording a completio
 
 Both apply to hook-driven signals. The `emit` command stays unconditional so manual adapters and scripts behave predictably.
 
+### Which hooks are registered
+
+`scripts/install-agent-hooks.py` registers exactly the events needed to raise a signal and to retire it again. Nothing is subscribed per tool call: `PreToolUse`/`PostToolUse` fire constantly and would say nothing about whether a person is needed.
+
+| Agent | Event | Becomes |
+| --- | --- | --- |
+| Claude Code | `Notification` (`idle_prompt`, `agent_completed`) | completion, or failure when the message reads as one |
+| | `Notification` (`permission_prompt`) | approval |
+| | `Notification` (`elicitation_dialog`, `agent_needs_input`) | question |
+| | `Notification` (`elicitation_complete`, `elicitation_response`) | clear |
+| | `StopFailure` | failure |
+| | `UserPromptSubmit`, `SessionStart`, `SessionEnd` | clear |
+| Codex | `PermissionRequest` | approval |
+| | `Stop` | question when the reply ends in one, otherwise completion |
+| | `UserPromptSubmit`, `SessionStart` | clear |
+| Hermes | `pre_approval_request` | approval |
+| | `post_llm_call` | question when the reply ends in one, otherwise completion |
+| | `api_request_error` | failure |
+| | `pre_llm_call`, `on_session_start`, `post_approval_response` | clear |
+| OpenCode | `permission.asked` | approval |
+| | `session.idle` / `session.error` | completion / failure |
+| | `permission.replied`, `session.status` = busy | clear |
+
+Every clear is scoped to the session that emitted it. `SessionEnd` exists for exactly one reason: with session-scoped clears, a session that is simply closed would otherwise leave its light on forever — the 24-hour prune only runs when some later hook fires. Codex and OpenCode have no session-end event, so a closed session there is retired by the next `SessionStart`/`UserPromptSubmit` in that same session, or by `k811-agent-event clear --all`.
+
 After building and copying the app to `/Applications`, preview and install hooks without replacing existing handlers:
 
 ```sh
