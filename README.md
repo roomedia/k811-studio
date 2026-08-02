@@ -70,7 +70,9 @@ Two rules make that hold in practice.
 
 **Nothing lights up while you are already looking at it.** Before signalling, the hook walks its own ancestor process chain and compares it against the frontmost application. If the terminal hosting this session is in front, the hook records nothing and stays dark — the light would be noise, not information. When the chain cannot be resolved (a terminal that spawns shells from a separate server process, or a session behind tmux) the check fails open and the light comes on, because a redundant notification is less harmful than a missed one.
 
-Completion auto-off keeps the no-resident-daemon property: recording a completion spawns one detached child that handles exactly that one expiry and exits. It holds no pipes from the hook runner and never opens the HID interface until the moment it turns the light off. A newer signal on the same key makes the pending expiry a no-op.
+Completion auto-off keeps the no-resident-daemon property. Recording a completion writes the deadline into the state file and spawns a detached child to wait it out. The child holds no pipes from the hook runner and never opens the HID interface until the moment it turns the light off.
+
+At most one child exists per session: it takes a per-key file lock, and a later child that cannot take the lock exits immediately. The holder re-reads the deadline each time it wakes, so a fresh completion simply pushes the deadline out and the same child sleeps longer. A cleared signal is not signalled to the child — it wakes at its deadline, finds nothing to expire, and exits.
 
 | Variable | Default | Effect |
 | --- | --- | --- |

@@ -8,33 +8,60 @@ final class K811AgentStateTests: XCTestCase {
 
     // MARK: - 완료 알림 자동 소등
 
-    func testCompletedExpiresWhenNotSuperseded() {
+    func testCompletedExpiresOnceItsDeadlinePasses() {
         var state = K811AgentState()
         let signal = K811AgentSignal(source: .claude, kind: .completed, sessionID: "a")
-        state.apply(signal, at: now)
+        let deadline = now.addingTimeInterval(600)
+        state.apply(signal, at: now, expiresAt: deadline)
 
-        XCTAssertTrue(state.expireCompleted(key: signal.key, notNewerThan: now))
+        XCTAssertTrue(state.expireCompleted(key: signal.key, asOf: deadline))
         XCTAssertNil(state.activeSignal)
     }
 
-    func testCompletedSurvivesWhenNewerSignalArrivedAfterScheduling() {
+    func testCompletedSurvivesBeforeItsDeadline() {
         var state = K811AgentState()
         let signal = K811AgentSignal(source: .claude, kind: .completed, sessionID: "a")
-        // 예약 시점보다 나중에 같은 키가 갱신되면 그 예약은 무효다.
-        state.apply(signal, at: now.addingTimeInterval(300))
+        let deadline = now.addingTimeInterval(600)
+        state.apply(signal, at: now, expiresAt: deadline)
 
-        XCTAssertFalse(state.expireCompleted(key: signal.key, notNewerThan: now))
+        XCTAssertFalse(state.expireCompleted(key: signal.key, asOf: now.addingTimeInterval(599)))
         XCTAssertEqual(state.activeSignal?.kind, .completed)
+    }
+
+    func testNewCompletionPushesTheDeadlineSoTheWaitingChildSleepsLonger() {
+        var state = K811AgentState()
+        let signal = K811AgentSignal(source: .claude, kind: .completed, sessionID: "a")
+        let first = now.addingTimeInterval(600)
+        state.apply(signal, at: now, expiresAt: first)
+
+        // 자식이 자는 사이 새 완료가 들어와 기한이 미뤄진다.
+        let second = now.addingTimeInterval(900)
+        state.apply(signal, at: now.addingTimeInterval(300), expiresAt: second)
+
+        XCTAssertEqual(state.completedExpiry(forKey: signal.key), second)
+        XCTAssertFalse(state.expireCompleted(key: signal.key, asOf: first))
+        XCTAssertTrue(state.expireCompleted(key: signal.key, asOf: second))
+    }
+
+    func testCompletedWithoutDeadlineNeverExpires() {
+        var state = K811AgentState()
+        let signal = K811AgentSignal(source: .claude, kind: .completed, sessionID: "a")
+        // 자동 소등을 끈 경우(타임아웃 0 이하)에는 만료 시각이 없다.
+        state.apply(signal, at: now, expiresAt: nil)
+
+        XCTAssertNil(state.completedExpiry(forKey: signal.key))
+        XCTAssertFalse(state.expireCompleted(key: signal.key, asOf: now.addingTimeInterval(86_400)))
     }
 
     func testWaitingStatesAreNeverExpiredByTime() {
         for kind in [K811AgentEventKind.question, .approval, .failure] {
             var state = K811AgentState()
             let signal = K811AgentSignal(source: .claude, kind: kind, sessionID: "a")
-            state.apply(signal, at: now)
+            // 기한을 억지로 걸어도 완료가 아니면 만료되지 않아야 한다.
+            state.apply(signal, at: now, expiresAt: now)
 
             XCTAssertFalse(
-                state.expireCompleted(key: signal.key, notNewerThan: now),
+                state.expireCompleted(key: signal.key, asOf: now.addingTimeInterval(86_400)),
                 "\(kind) 는 사람이 응답해야만 꺼져야 한다"
             )
             XCTAssertEqual(state.activeSignal?.kind, kind)
@@ -45,7 +72,7 @@ final class K811AgentStateTests: XCTestCase {
         var state = K811AgentState()
         state.apply(K811AgentSignal(source: .claude, kind: .completed, sessionID: "a"), at: now)
 
-        XCTAssertFalse(state.expireCompleted(key: "claude:missing", notNewerThan: now))
+        XCTAssertFalse(state.expireCompleted(key: "claude:missing", asOf: now))
         XCTAssertEqual(state.entries.count, 1)
     }
 

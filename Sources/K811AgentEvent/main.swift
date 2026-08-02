@@ -81,8 +81,14 @@ private func render(_ signal: K811AgentSignal?) throws {
 }
 
 private func apply(_ signal: K811AgentSignal) throws -> K811AgentSignal? {
-    let active = try K811AgentStateStore().update(with: signal, render: render)
-    if signal.kind == .completed {
+    let seconds = signal.kind == .completed ? completedTimeoutSeconds() : 0
+    let expiresAt = seconds > 0 ? Date().addingTimeInterval(seconds) : nil
+    let active = try K811AgentStateStore().update(
+        with: signal,
+        expiresAt: expiresAt,
+        render: render
+    )
+    if expiresAt != nil {
         scheduleCompletedExpiry(for: signal)
     }
     return active
@@ -115,20 +121,57 @@ private func helperExecutableURL() -> URL {
 
 /// 완료 알림만 시간이 지나면 스스로 꺼지도록 분리된 자식 프로세스를 띄운다.
 ///
-/// 상주 데몬을 두지 않는다는 설계를 유지하기 위해, 자식은 이 한 건의 만료만 담당하고
-/// 끝난다. 표준 입출력을 모두 끊어 훅 러너가 자식의 EOF 를 기다리지 않게 한다.
+/// 상주 데몬을 두지 않는다는 설계를 유지하기 위해, 자식은 만료 한 건만 담당하고 끝난다.
+/// 표준 입출력을 모두 끊어 훅 러너가 자식의 EOF 를 기다리지 않게 한다.
+/// 같은 키에 이미 담당 자식이 있으면 새 자식은 잠금을 못 잡고 즉시 물러난다.
 private func scheduleCompletedExpiry(for signal: K811AgentSignal) {
-    let seconds = completedTimeoutSeconds()
-    guard seconds > 0 else { return }
-
     let process = Process()
     process.executableURL = helperExecutableURL()
-    process.arguments = ["expire", "--key", signal.key, "--after", String(seconds)]
+    process.arguments = ["expire", "--key", signal.key]
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     try? process.run()
     // 기다리지 않는다. 부모가 끝나면 자식은 launchd 로 재부모화된다.
+}
+
+/// 이 키의 만료를 담당할 권리를 잡는다. 이미 담당 자식이 있으면 false.
+///
+/// 잠금은 프로세스가 살아 있는 동안 유지돼야 하므로 성공 시 파일 기술자를 닫지 않는다.
+private func acquireExpiryLock(for key: String) -> Bool {
+    let directory = K811AgentStateStore.defaultDirectoryURL
+    try? FileManager.default.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
+    let safeKey = String(key.map { $0.isLetter || $0.isNumber ? $0 : "_" })
+    let url = directory.appendingPathComponent("expire-\(safeKey).lock")
+
+    let descriptor = open(url.path, O_CREAT | O_RDWR, mode_t(0o600))
+    guard descriptor >= 0 else { return false }
+    guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+        close(descriptor)
+        return false
+    }
+    return true
+}
+
+/// 담당 자식의 본체. 기한까지 자고 일어나 다시 확인한다.
+///
+/// 자는 사이에 새 완료가 들어오면 기한이 미뤄지므로, 깨어나서 기한을 다시 읽고
+/// 남아 있으면 그만큼 더 잔다. 그래서 완료가 몇 번을 오든 자식은 키마다 하나뿐이다.
+private func runExpiryWatch(key: String) throws {
+    let store = K811AgentStateStore()
+    while true {
+        guard let deadline = try store.completedExpiry(forKey: key) else {
+            return // 이미 해제됐거나 다른 신호가 덮어썼다
+        }
+        let remaining = deadline.timeIntervalSinceNow
+        if remaining <= 0 { break }
+        Thread.sleep(forTimeInterval: remaining)
+    }
+    try store.expireCompleted(key: key, render: render)
 }
 
 private func clearAll() throws {
@@ -294,30 +337,22 @@ private func run() throws {
         printJSON(["applied": true, "active": "off"])
 
     case "expire":
-        guard
-            let key = value(after: "--key", in: arguments),
-            let afterValue = value(after: "--after", in: arguments),
-            let after = Double(afterValue)
-        else {
-            throw Exit.usage("expire requires --key and --after")
+        guard let key = value(after: "--key", in: arguments) else {
+            throw Exit.usage("expire requires --key")
         }
         // 훅 러너의 프로세스 그룹에서 분리해, 훅이 끝날 때 같이 죽지 않게 한다.
         setsid()
-        let scheduledAt = Date()
-        Thread.sleep(forTimeInterval: after)
-        // 이 예약 이후에 갱신된 기록은 새 신호가 덮어쓴 것이므로 건드리지 않는다.
-        try K811AgentStateStore().expireCompleted(
-            key: key,
-            notNewerThan: scheduledAt,
-            render: render
-        )
+        guard acquireExpiryLock(for: key) else {
+            return // 이미 담당 자식이 있다. 그쪽이 연장된 기한까지 처리한다
+        }
+        try runExpiryWatch(key: key)
 
     case "--help", "help":
         print("""
         k811-agent-event emit --source SOURCE --event EVENT [--session ID]
         k811-agent-event hook claude|codex|hermes
         k811-agent-event clear --all
-        k811-agent-event expire --key KEY --after SECONDS   (내부용: 완료 알림 자동 소등)
+        k811-agent-event expire --key KEY                   (내부용: 완료 알림 자동 소등)
 
         Sources: \(K811AgentSource.allCases.map(\.rawValue).joined(separator: ", "))
         Events:  \(K811AgentEventKind.allCases.map(\.rawValue).joined(separator: ", "))

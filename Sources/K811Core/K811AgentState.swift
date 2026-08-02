@@ -5,6 +5,9 @@ public struct K811AgentState: Codable, Equatable, Sendable {
     public struct Entry: Codable, Equatable, Sendable {
         public let signal: K811AgentSignal
         public let updatedAt: Date
+        /// 완료 알림이 스스로 꺼질 시각. 완료가 아니면 nil.
+        /// 예전 상태 파일에는 없는 키라 옵셔널로 둔다.
+        public let expiresAt: Date?
     }
 
     public private(set) var entries: [String: Entry]
@@ -13,7 +16,11 @@ public struct K811AgentState: Codable, Equatable, Sendable {
         self.entries = entries
     }
 
-    public mutating func apply(_ signal: K811AgentSignal, at date: Date = Date()) {
+    public mutating func apply(
+        _ signal: K811AgentSignal,
+        at date: Date = Date(),
+        expiresAt: Date? = nil
+    ) {
         prune(before: date.addingTimeInterval(-86_400))
         if signal.kind == .clear {
             if signal.sessionID == nil {
@@ -22,8 +29,16 @@ public struct K811AgentState: Codable, Equatable, Sendable {
                 entries.removeValue(forKey: signal.key)
             }
         } else {
-            entries[signal.key] = Entry(signal: signal, updatedAt: date)
+            entries[signal.key] = Entry(signal: signal, updatedAt: date, expiresAt: expiresAt)
         }
+    }
+
+    /// 이 키에 걸려 있는 완료 만료 시각. 완료가 아니거나 만료를 안 걸었으면 nil.
+    public func completedExpiry(forKey key: String) -> Date? {
+        guard let entry = entries[key], entry.signal.kind == .completed else {
+            return nil
+        }
+        return entry.expiresAt
     }
 
     public mutating func removeAll() {
@@ -33,13 +48,14 @@ public struct K811AgentState: Codable, Equatable, Sendable {
     /// 완료 알림만 시간으로 만료시킨다.
     ///
     /// 질문·승인·실패는 에이전트가 사람을 기다리는 상태라 시간으로 지우지 않는다.
-    /// `cutoff` 이후에 갱신된 기록은 새 신호가 덮어쓴 것이므로 남긴다.
+    /// 새 완료가 덮어쓰면 만료 시각도 함께 미뤄지므로, 기한 전이면 아무것도 하지 않는다.
     @discardableResult
-    public mutating func expireCompleted(key: String, notNewerThan cutoff: Date) -> Bool {
+    public mutating func expireCompleted(key: String, asOf now: Date) -> Bool {
         guard
             let entry = entries[key],
             entry.signal.kind == .completed,
-            entry.updatedAt <= cutoff
+            let expiresAt = entry.expiresAt,
+            expiresAt <= now
         else {
             return false
         }
@@ -82,11 +98,12 @@ public final class K811AgentStateStore {
     @discardableResult
     public func update(
         with signal: K811AgentSignal,
+        expiresAt: Date? = nil,
         render: (K811AgentSignal?) throws -> Void
     ) throws -> K811AgentSignal? {
         try withLock {
             var state = try load()
-            state.apply(signal)
+            state.apply(signal, expiresAt: expiresAt)
             let active = state.activeSignal
             try render(active)
             try save(state)
@@ -111,18 +128,23 @@ public final class K811AgentStateStore {
     @discardableResult
     public func expireCompleted(
         key: String,
-        notNewerThan cutoff: Date,
+        asOf now: Date = Date(),
         render: (K811AgentSignal?) throws -> Void
     ) throws -> Bool {
         try withLock {
             var state = try load()
-            guard state.expireCompleted(key: key, notNewerThan: cutoff) else {
+            guard state.expireCompleted(key: key, asOf: now) else {
                 return false
             }
             try render(state.activeSignal)
             try save(state)
             return true
         }
+    }
+
+    /// 이 키에 걸려 있는 완료 만료 시각. 만료 담당 자식이 기한 연장을 확인할 때 쓴다.
+    public func completedExpiry(forKey key: String) throws -> Date? {
+        try withLock { try load().completedExpiry(forKey: key) }
     }
 
     public func snapshot() throws -> K811AgentState {
