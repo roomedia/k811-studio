@@ -30,6 +30,23 @@ public struct K811AgentState: Codable, Equatable, Sendable {
         entries.removeAll()
     }
 
+    /// 완료 알림만 시간으로 만료시킨다.
+    ///
+    /// 질문·승인·실패는 에이전트가 사람을 기다리는 상태라 시간으로 지우지 않는다.
+    /// `cutoff` 이후에 갱신된 기록은 새 신호가 덮어쓴 것이므로 남긴다.
+    @discardableResult
+    public mutating func expireCompleted(key: String, notNewerThan cutoff: Date) -> Bool {
+        guard
+            let entry = entries[key],
+            entry.signal.kind == .completed,
+            entry.updatedAt <= cutoff
+        else {
+            return false
+        }
+        entries.removeValue(forKey: key)
+        return true
+    }
+
     public mutating func prune(before cutoff: Date) {
         entries = entries.filter { $0.value.updatedAt >= cutoff }
     }
@@ -87,6 +104,24 @@ public final class K811AgentStateStore {
             try render(nil)
             try save(state)
             return nil
+        }
+    }
+
+    /// 예약된 만료 시점에 호출된다. 지울 게 없으면 LED 를 건드리지 않는다.
+    @discardableResult
+    public func expireCompleted(
+        key: String,
+        notNewerThan cutoff: Date,
+        render: (K811AgentSignal?) throws -> Void
+    ) throws -> Bool {
+        try withLock {
+            var state = try load()
+            guard state.expireCompleted(key: key, notNewerThan: cutoff) else {
+                return false
+            }
+            try render(state.activeSignal)
+            try save(state)
+            return true
         }
     }
 

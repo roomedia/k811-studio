@@ -1,6 +1,7 @@
 .build/
 .DS_Store
 dist/
+__pycache__/
 
 # 벤더 소프트웨어 분석 산출물은 공개하지 않는다
 work/*/samples/

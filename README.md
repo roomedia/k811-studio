@@ -51,6 +51,32 @@ The app bundle includes `Contents/Helpers/k811-agent-event`, a transient local h
 
 The helper stays alive only for the bounded pulse sequence (under two seconds for the built-in patterns), leaves the final fixed color on the keyboard, and exits. It keeps only `source`, `event`, opaque `session`, and timestamp under `~/Library/Application Support/K811 Studio/agent-state.json`. The directory and files are user-only (`0700`/`0600`), updates are serialized with a file lock, and state is saved only after the HID transaction succeeds. Records older than 24 hours are pruned on the next hook. The highest-severity pending event wins; clearing it restores the next event below it.
 
+### When the light goes out
+
+A waiting state can only be cleared by a person; a finished state may also be cleared by time. Completion is past-tense information that costs nothing to miss, while a question or an approval means the agent is actually blocked — turning those off on a timer would quietly hide the fact that something is still waiting.
+
+| Event | Auto-off | Cleared by |
+| --- | --- | --- |
+| Completion | after `K811_COMPLETED_TIMEOUT_SECONDS` (default 600) | next prompt in that session |
+| Question | never | next prompt in that session |
+| Approval | never | the approval response |
+| Failure | never | next prompt in that session |
+
+Two rules make that hold in practice.
+
+**Clears are scoped to one session.** `SessionStart` and `SessionEnd` clear only their own session. Opening a new window is not evidence that you saw a pending approval belonging to a different session. `SessionEnd` is what reclaims a session that was simply closed while its light was still on.
+
+**Nothing lights up while you are already looking at it.** Before signalling, the hook walks its own ancestor process chain and compares it against the frontmost application. If the terminal hosting this session is in front, the hook records nothing and stays dark — the light would be noise, not information. When the chain cannot be resolved (a terminal that spawns shells from a separate server process, or a session behind tmux) the check fails open and the light comes on, because a redundant notification is less harmful than a missed one.
+
+Completion auto-off keeps the no-resident-daemon property: recording a completion spawns one detached child that handles exactly that one expiry and exits. It holds no pipes from the hook runner and never opens the HID interface until the moment it turns the light off. A newer signal on the same key makes the pending expiry a no-op.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `K811_COMPLETED_TIMEOUT_SECONDS` | `600` | Seconds before a completion turns itself off. `0` or less disables auto-off. |
+| `K811_AGENT_SUPPRESS_WHEN_FOCUSED` | on | Set to `0` to signal even when the hosting terminal is frontmost. |
+
+Both apply to hook-driven signals. The `emit` command stays unconditional so manual adapters and scripts behave predictably.
+
 After building and copying the app to `/Applications`, preview and install hooks without replacing existing handlers:
 
 ```sh

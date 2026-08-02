@@ -179,6 +179,8 @@ def main() -> int:
         ),
         ("UserPromptSubmit", hook_group(claude_command)),
         ("SessionStart", hook_group(claude_command)),
+        # 세션을 그냥 닫았을 때 그 세션의 알림을 정리한다.
+        ("SessionEnd", hook_group(claude_command)),
         ("StopFailure", hook_group(claude_command)),
     ]
     if "claude" in selected_sources:

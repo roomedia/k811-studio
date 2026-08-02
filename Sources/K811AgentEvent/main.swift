@@ -81,7 +81,54 @@ private func render(_ signal: K811AgentSignal?) throws {
 }
 
 private func apply(_ signal: K811AgentSignal) throws -> K811AgentSignal? {
-    try K811AgentStateStore().update(with: signal, render: render)
+    let active = try K811AgentStateStore().update(with: signal, render: render)
+    if signal.kind == .completed {
+        scheduleCompletedExpiry(for: signal)
+    }
+    return active
+}
+
+private func environmentFlag(_ name: String, default defaultValue: Bool) -> Bool {
+    guard let raw = ProcessInfo.processInfo.environment[name]?.lowercased() else {
+        return defaultValue
+    }
+    return !["0", "false", "no", "off"].contains(raw)
+}
+
+/// 완료 알림이 스스로 꺼지기까지의 시간. `0` 이하면 자동 소등을 끈다.
+private func completedTimeoutSeconds() -> Double {
+    guard
+        let raw = ProcessInfo.processInfo.environment["K811_COMPLETED_TIMEOUT_SECONDS"],
+        let seconds = Double(raw)
+    else {
+        return 600
+    }
+    return seconds
+}
+
+private func helperExecutableURL() -> URL {
+    if let path = Bundle.main.executablePath {
+        return URL(fileURLWithPath: path)
+    }
+    return URL(fileURLWithPath: CommandLine.arguments[0])
+}
+
+/// 완료 알림만 시간이 지나면 스스로 꺼지도록 분리된 자식 프로세스를 띄운다.
+///
+/// 상주 데몬을 두지 않는다는 설계를 유지하기 위해, 자식은 이 한 건의 만료만 담당하고
+/// 끝난다. 표준 입출력을 모두 끊어 훅 러너가 자식의 EOF 를 기다리지 않게 한다.
+private func scheduleCompletedExpiry(for signal: K811AgentSignal) {
+    let seconds = completedTimeoutSeconds()
+    guard seconds > 0 else { return }
+
+    let process = Process()
+    process.executableURL = helperExecutableURL()
+    process.arguments = ["expire", "--key", signal.key, "--after", String(seconds)]
+    process.standardInput = FileHandle.nullDevice
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
+    // 기다리지 않는다. 부모가 끝나면 자식은 launchd 로 재부모화된다.
 }
 
 private func clearAll() throws {
@@ -91,7 +138,8 @@ private func clearAll() throws {
 private func claudeSignal(from payload: HookPayload) -> K811AgentSignal? {
     let kind: K811AgentEventKind?
     switch payload.hookEventName {
-    case "UserPromptSubmit", "SessionStart":
+    // SessionEnd 가 없으면 세션을 그냥 닫았을 때 그 세션의 알림이 계속 남는다.
+    case "UserPromptSubmit", "SessionStart", "SessionEnd":
         kind = .clear
     case "StopFailure":
         kind = .failure
@@ -115,12 +163,10 @@ private func claudeSignal(from payload: HookPayload) -> K811AgentSignal? {
         kind = nil
     }
 
+    // SessionStart 도 자기 세션만 지운다. 새 창을 여는 것이 다른 세션의
+    // 미확인 승인·실패 알림을 봤다는 뜻은 아니다.
     return kind.map {
-        K811AgentSignal(
-            source: .claude,
-            kind: $0,
-            sessionID: payload.hookEventName == "SessionStart" ? nil : payload.sessionID
-        )
+        K811AgentSignal(source: .claude, kind: $0, sessionID: payload.sessionID)
     }
 }
 
@@ -139,11 +185,7 @@ private func codexSignal(from payload: HookPayload) -> K811AgentSignal? {
     }
 
     return kind.map {
-        K811AgentSignal(
-            source: .codex,
-            kind: $0,
-            sessionID: payload.hookEventName == "SessionStart" ? nil : payload.sessionID
-        )
+        K811AgentSignal(source: .codex, kind: $0, sessionID: payload.sessionID)
     }
 }
 
@@ -218,6 +260,15 @@ private func run() throws {
         case "hermes": signal = hermesSignal(from: payload)
         default: throw Exit.usage("unsupported hook source: \(arguments[1])")
         }
+        // 이 훅을 띄운 터미널을 사용자가 보고 있으면 알릴 이유가 없다.
+        // clear 는 상태를 되돌리는 동작이라 항상 처리한다.
+        if let signal,
+           signal.kind != .clear,
+           environmentFlag("K811_AGENT_SUPPRESS_WHEN_FOCUSED", default: true),
+           K811Presence.hookHostIsFrontmost() {
+            printJSON([:])
+            return
+        }
         if let signal {
             do {
                 _ = try apply(signal)
@@ -237,14 +288,38 @@ private func run() throws {
         try clearAll()
         printJSON(["applied": true, "active": "off"])
 
+    case "expire":
+        guard
+            let key = value(after: "--key", in: arguments),
+            let afterValue = value(after: "--after", in: arguments),
+            let after = Double(afterValue)
+        else {
+            throw Exit.usage("expire requires --key and --after")
+        }
+        // 훅 러너의 프로세스 그룹에서 분리해, 훅이 끝날 때 같이 죽지 않게 한다.
+        setsid()
+        let scheduledAt = Date()
+        Thread.sleep(forTimeInterval: after)
+        // 이 예약 이후에 갱신된 기록은 새 신호가 덮어쓴 것이므로 건드리지 않는다.
+        try K811AgentStateStore().expireCompleted(
+            key: key,
+            notNewerThan: scheduledAt,
+            render: render
+        )
+
     case "--help", "help":
         print("""
         k811-agent-event emit --source SOURCE --event EVENT [--session ID]
         k811-agent-event hook claude|codex|hermes
         k811-agent-event clear --all
+        k811-agent-event expire --key KEY --after SECONDS   (내부용: 완료 알림 자동 소등)
 
         Sources: \(K811AgentSource.allCases.map(\.rawValue).joined(separator: ", "))
         Events:  \(K811AgentEventKind.allCases.map(\.rawValue).joined(separator: ", "))
+
+        Environment:
+          K811_COMPLETED_TIMEOUT_SECONDS    완료 알림 자동 소등까지의 초. 0 이하면 끔 (기본 600)
+          K811_AGENT_SUPPRESS_WHEN_FOCUSED  훅을 띄운 터미널이 최전면이면 켜지 않음 (기본 on)
         """)
 
     default:
