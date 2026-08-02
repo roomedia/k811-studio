@@ -652,9 +652,14 @@ final class K811PacketTests: XCTestCase {
     XCTAssertEqual(
       [completed.mode, question.mode, approval.mode, failure.mode],
       [.fixed, .fixed, .fixed, .fixed])
+    // 밝기는 심각도 구분에 쓰지 않는다. 알림은 눈에 띄는 게 목적이라 전부 최대로 낸다.
     XCTAssertEqual(
       [completed.brightness, question.brightness, approval.brightness, failure.brightness],
-      [170, 200, 225, 255])
+      [
+        K811AgentPattern.maxBrightness, K811AgentPattern.maxBrightness,
+        K811AgentPattern.maxBrightness, K811AgentPattern.maxBrightness,
+      ])
+    XCTAssertEqual(K811AgentPattern.maxBrightness, 255)
     XCTAssertEqual([completed.red, completed.green, completed.blue], [0, 255, 0])
     XCTAssertEqual([question.red, question.green, question.blue], [10, 132, 255])
     XCTAssertEqual([approval.red, approval.green, approval.blue], [255, 80, 0])

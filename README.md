@@ -41,10 +41,12 @@ open "dist/K811 Studio.app"
 
 The app bundle includes `Contents/Helpers/k811-agent-event`, a transient local helper that writes directly to the K811 HID interface. It does not open a network port, require a resident app/daemon, or persist prompts and response text.
 
-- **Completion:** green, two pulses, then solid at brightness 170.
-- **Question:** blue, three pulses, then solid at brightness 200.
-- **Approval:** hardware-calibrated orange, four pulses, then solid at brightness 225.
-- **Failure:** red, six fast pulses, then solid at brightness 255.
+All four run at full brightness (255). Severity is carried by colour and pulse count, not by dimming — a notification exists to be noticed.
+
+- **Completion:** green, two pulses, then solid.
+- **Question:** blue, three pulses, then solid.
+- **Approval:** hardware-calibrated orange, four pulses, then solid.
+- **Failure:** red, six fast pulses, then solid.
 - **Clear / acknowledgement:** fixed black and no pending state.
 - **Required sources:** Hermes Agent, Claude Code, and Codex hooks work directly, including sessions launched inside Orca. Orca automations can call the universal `emit` command. Generic Orca terminal-idle/gate detection is intentionally not polled because that would require a resident watcher.
 - **Optional sources:** OpenCode has a bundled adapter. Pi and Antigravity can use the universal `emit` command when a supported hook becomes available.

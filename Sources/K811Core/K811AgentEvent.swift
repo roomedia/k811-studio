@@ -54,6 +54,10 @@ public enum K811AgentImportance: Int, Comparable, Codable, Sendable {
 }
 
 public struct K811AgentPattern: Equatable, Sendable {
+    /// 훅 조명 기본 밝기. 알림은 눈에 띄는 게 목적이라 심각도와 무관하게 최대로 낸다.
+    /// 심각도는 색과 펄스 횟수로 이미 구분된다.
+    public static let maxBrightness: UInt8 = 255
+
     public let importance: K811AgentImportance
     public let red: UInt8
     public let green: UInt8
@@ -74,7 +78,7 @@ public struct K811AgentPattern: Equatable, Sendable {
                 red: 0,
                 green: 255,
                 blue: 0,
-                brightness: 170,
+                brightness: maxBrightness,
                 mode: .fixed,
                 pulseCount: 2,
                 onMilliseconds: 180,
@@ -86,7 +90,7 @@ public struct K811AgentPattern: Equatable, Sendable {
                 red: 10,
                 green: 132,
                 blue: 255,
-                brightness: 200,
+                brightness: maxBrightness,
                 mode: .fixed,
                 pulseCount: 3,
                 onMilliseconds: 260,
@@ -98,7 +102,7 @@ public struct K811AgentPattern: Equatable, Sendable {
                 red: 255,
                 green: 80,
                 blue: 0,
-                brightness: 225,
+                brightness: maxBrightness,
                 mode: .fixed,
                 pulseCount: 4,
                 onMilliseconds: 180,
@@ -110,7 +114,7 @@ public struct K811AgentPattern: Equatable, Sendable {
                 red: 255,
                 green: 0,
                 blue: 0,
-                brightness: 255,
+                brightness: maxBrightness,
                 mode: .fixed,
                 pulseCount: 6,
                 onMilliseconds: 100,
