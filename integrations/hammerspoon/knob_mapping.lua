@@ -21,10 +21,14 @@
 --
 -- [세로 이동을 '창'으로 처리하는 이유]
 -- 이 장치는 consumer HID 리포트에 usage 를 한 번에 하나만 담는다. 그래서 노브를 돌리면
--- 재생/일시정지가 하드웨어적으로 강제 release 된다(관측값: 회전 13ms 전에 key up).
+-- 재생/일시정지가 하드웨어적으로 강제 release 된다(관측값: 회전 5~13ms 전에 key up).
 -- 버튼을 실제로 누르고 있는지 알 방법이 없으므로, 버튼을 뗀 직후 COMBO_WINDOW 안에
 -- 노브가 들어오면 조합으로 보고 세로 모드에 진입한다. 세로 모드는 회전이 이어지는 동안
 -- VERTICAL_IDLE 만큼 계속 연장되고, 손을 멈추면 가로로 돌아온다.
+--
+-- 눌림 상태를 되찾을 방법도 없다. 강제 release 뒤에는 버튼을 계속 누르고 있어도 장치가
+-- f20 을 다시 보내지 않는다. 실측하면 회전이 12초 동안 이어지는 사이 f20 down 은 한 번도
+-- 오지 않았다. 그래서 이 판정은 좁힐 수만 있고 정확해질 수는 없다.
 --
 -- [조이스틱은 왜 창이 필요 없나]
 -- 화살표는 consumer 가 아닌 키보드 리포트로 오기 때문에 재생/일시정지를 밀어내지 않는다.
@@ -43,18 +47,27 @@
 local M = {}
 
 local STEP = 100 -- 노브 한 스텝 이동 픽셀
-local COMBO_WINDOW = 0.15 -- 버튼을 뗀 뒤 이 시간 안에 노브가 오면 조합으로 본다
+-- 강제 release 와 첫 회전 사이는 실측 5~13ms 다. 창을 그보다 넓게 잡을 이유가 없다.
+-- 넓히면 진짜 휠 클릭 직후에 노브를 돌린 것까지 조합으로 삼킨다.
+local COMBO_WINDOW = 0.06 -- 버튼을 뗀 뒤 이 시간 안에 노브가 오면 조합으로 본다
+-- 방향을 바꿀 때 회전 간격이 실측 457ms 까지 벌어진다. 이보다 짧게 잡으면 버튼을
+-- 누른 채로도 세로 모드가 중간에 풀린다.
 local VERTICAL_IDLE = 1.0 -- 세로 모드가 회전 없이 유지되는 시간
 local LONG_PRESS = 0.7 -- 이보다 오래 눌렀다 떼면 휠 클릭 없이 조합 의도로만 본다
 local CLICK_DELAY = 0.15 -- 휠 클릭을 미루는 시간. 이 사이 노브가 오면 취소된다
 
-local JOY_TICK = 1 / 60 -- 커서를 다시 그리는 간격
-local JOY_NUDGE = 2 -- 딸깍 한 번에 움직일 픽셀
-local JOY_HOLD_DELAY = 0.12 -- 이 시간을 넘겨 밀고 있으면 활주로 넘어간다
-local JOY_MIN_SPEED = 2 -- 활주 시작 속도 (tick 당 픽셀)
-local JOY_MAX_SPEED = 18 -- 활주 최고 속도 (tick 당 픽셀)
-local JOY_RAMP = 0.6 -- 최고 속도까지 걸리는 시간
 local DIAGONAL = 0.7071 -- 대각선일 때 축별 속도 보정
+
+-- 조이스틱 이동 감각. 손끝에 맞추는 값이라 M.tune 으로 돌아가는 중에도 바꿀 수 있다.
+local joy = {
+  tick = 1 / 60, -- 커서를 다시 그리는 간격. 바꾸면 다음 밀기부터 적용된다
+  nudge = 2, -- 딸깍 한 번에 움직일 픽셀
+  holdDelay = 0.12, -- 이 시간을 넘겨 밀고 있으면 활주로 넘어간다
+  minSpeed = 1, -- 활주 시작 속도 (tick 당 픽셀)
+  maxSpeed = 8, -- 활주 최고 속도 (tick 당 픽셀)
+  ramp = 0.5, -- 최고 속도까지 걸리는 시간
+  curve = 1.5, -- 붙는 곡선. 1 이면 직선이고 크면 초반이 느려진다
+}
 
 local KEYS = {
   knobCCW = "f16",
@@ -132,10 +145,10 @@ local function joyStop()
   end
 end
 
---- 밀고 있는 동안 커서를 계속 움직인다. 처음 JOY_HOLD_DELAY 는 쉰다.
+--- 밀고 있는 동안 커서를 계속 움직인다. 처음 joy.holdDelay 는 쉰다.
 ---
 --- 딸깍 한 번은 key down 의 nudge 로 이미 끝났으므로, 그 시간을 넘겨 계속 밀고 있을 때만
---- 활주로 넘어간다. 그래서 짧게 톡 치면 JOY_NUDGE 픽셀만 움직이고 길게 밀면 가속된다.
+--- 활주로 넘어간다. 그래서 짧게 톡 치면 joy.nudge 픽셀만 움직이고 길게 밀면 가속된다.
 local function joyTick()
   local dx, dy = joyVector()
   if dx == 0 and dy == 0 then
@@ -143,14 +156,13 @@ local function joyTick()
     return
   end
 
-  local gliding = now() - joyPressedAt - JOY_HOLD_DELAY
+  local gliding = now() - joyPressedAt - joy.holdDelay
   if gliding <= 0 then
     return
   end
 
-  local ratio = math.min(gliding / JOY_RAMP, 1)
-  -- 제곱 곡선. 시작은 느리게 두고 끝에서 붙는다
-  local speed = JOY_MIN_SPEED + (JOY_MAX_SPEED - JOY_MIN_SPEED) * ratio * ratio
+  local ratio = math.min(gliding / joy.ramp, 1) ^ joy.curve
+  local speed = joy.minSpeed + (joy.maxSpeed - joy.minSpeed) * ratio
   if dx ~= 0 and dy ~= 0 then
     speed = speed * DIAGONAL
   end
@@ -167,13 +179,13 @@ local function onJoyDown(axis)
 
   local dx, dy = joyVector()
   if dx ~= 0 or dy ~= 0 then
-    local nudge = (dx ~= 0 and dy ~= 0) and JOY_NUDGE * DIAGONAL or JOY_NUDGE
+    local nudge = (dx ~= 0 and dy ~= 0) and joy.nudge * DIAGONAL or joy.nudge
     moveBy(dx * nudge, dy * nudge)
   end
 
   if not joyTimer then
     joyPressedAt = now()
-    joyTimer = hs.timer.doEvery(JOY_TICK, joyTick)
+    joyTimer = hs.timer.doEvery(joy.tick, joyTick)
   end
 end
 
@@ -316,6 +328,22 @@ function M.stop()
   joyUsed = false
   pressedAt = nil
   verticalUntil = 0
+end
+
+--- 조이스틱 이동 감각을 돌아가는 중에 바꾼다. 손끝에 맞출 때는 파일을 고치고
+--- 다시 불러들이는 것보다 이쪽이 빠르다. 마음에 드는 값은 위 joy 표에 옮겨 적을 것.
+---
+---   hs -c "knobMapping.tune{ maxSpeed = 6, ramp = 1.5 }"
+---   hs -c "hs.inspect(knobMapping.tune{})"
+function M.tune(values)
+  for key, value in pairs(values or {}) do
+    if joy[key] == nil then
+      hs.printf("knob_mapping: 알 수 없는 조이스틱 값 %s", tostring(key))
+    else
+      joy[key] = value
+    end
+  end
+  return joy
 end
 
 M.keys = KEYS
