@@ -145,6 +145,6 @@ Besides the lighting and keymap client, this repository carries the host-side re
 | Component | Role |
 | --- | --- |
 | [`integrations/karabiner/`](integrations/karabiner/) | Device-scoped remaps. Translates the knob and media buttons to `f16`–`f20`, and documents the device-grab setting the K811 needs. |
-| [`integrations/hammerspoon/`](integrations/hammerspoon/) | Turns those keys into cursor movement and clicks. Also holds a capture module for diagnosing what the device actually emits. |
+| [`integrations/hammerspoon/`](integrations/hammerspoon/) | Turns those keys into cursor movement and clicks, and moves the cursor finely from the joystick while the wheel-click button is held. Also holds a capture module for diagnosing what the device actually emits. |
 
 The split is not stylistic. Karabiner is the only side that can scope a rule to one device; Hammerspoon is the only side that can produce a fixed-pixel relative cursor move. Each integration's README explains its own constraints.

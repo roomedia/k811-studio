@@ -32,15 +32,20 @@ local keyTap = hs.eventtap.new(
   function(e)
     local code = e:getKeyCode()
     local name = hs.keycodes.map[code] or "?"
-    local dir = (e:getType() == hs.eventtap.event.types.keyDown) and "down" or "up"
+    local isDown = e:getType() == hs.eventtap.event.types.keyDown
+    local dir = isDown and "down" or "up"
+    -- 눌린 채로 유지되는지 판정하려면 오토리핏이 필요하다. 딸깍 한 번과
+    -- 계속 밀고 있는 상태는 리핏 유무로만 구분된다.
+    local repeated = isDown
+      and e:getProperty(hs.eventtap.event.properties.keyboardEventAutorepeat) ~= 0
     local mods = {}
     for m in pairs(e:getFlags()) do
       table.insert(mods, m)
     end
     table.sort(mods)
     append(string.format(
-      "KEY     code=%-4d name=%-12s %-4s mods=[%s]",
-      code, name, dir, table.concat(mods, ",")
+      "KEY     code=%-4d name=%-12s %-4s repeat=%-5s mods=[%s]",
+      code, name, dir, tostring(repeated), table.concat(mods, ",")
     ))
     return false
   end

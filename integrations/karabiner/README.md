@@ -9,6 +9,8 @@ K811(`VID 0x5566` / `PID 0x000A`)에만 적용되는 장치 한정 remap 모음.
 | `k811-studio-remaps.json` | K811 전용 키 remap (`Command+Escape` → `Command+Q` 등) |
 | `k811-knob-media-to-fkeys.json` | 노브·미디어 버튼을 `f16`~`f20`으로 번역. Hammerspoon 쪽 마우스 동작의 입력원이다 |
 
+조이스틱은 여기 없다. 장치가 방향마다 화살표 키를 그대로 내보내므로 번역할 것이 없고, Hammerspoon 이 직접 받는다.
+
 ## 설치
 
 두 파일을 `~/.config/karabiner/assets/complex_modifications/`에 복사한 뒤 Karabiner Settings → Complex Modifications → Add rule 에서 활성화한다.
