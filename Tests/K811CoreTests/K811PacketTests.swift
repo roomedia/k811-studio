@@ -699,7 +699,7 @@ final class K811PacketTests: XCTestCase {
     XCTAssertNil(K811AgentSource(rawValue: "hermes"))
   }
 
-  func testAgentStateKeepsHighestImportanceAndRestoresLowerSignalsOnClear() {
+  func testAgentStateRestoresThePreviousSignalOnEachClear() {
     var state = K811AgentState()
     let date = Date(timeIntervalSince1970: 1_000_000)
     state.apply(K811AgentSignal(source: .orca, kind: .completed, sessionID: "done"), at: date)

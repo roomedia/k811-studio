@@ -67,14 +67,20 @@ public struct K811AgentState: Codable, Equatable, Sendable {
         entries = entries.filter { $0.value.updatedAt >= cutoff }
     }
 
+    /// 조명에 올릴 신호. 가장 최근에 들어온 것이고, 같은 시각이면 심각도가 높은 쪽이다.
+    ///
+    /// 심각도 순으로 고르지 않는다. 그러면 승인이 안 풀린 동안 들어온 완료가 조명을
+    /// 바꾸지 못하고 승인 색만 다시 펄스해서, 방금 무슨 일이 일어났는지 알 수 없었다.
+    /// 아직 사람을 기다리는 승인·질문은 상태 파일에 그대로 남아 있고, 최근 신호가
+    /// 해제되면 다시 드러난다. 조명은 마지막 사건을 말하고 상태 파일이 밀린 일을 기억한다.
     public var activeSignal: K811AgentSignal? {
         entries.values.max { lhs, rhs in
-            let left = K811AgentPattern.pattern(for: lhs.signal.kind)?.importance ?? .none
-            let right = K811AgentPattern.pattern(for: rhs.signal.kind)?.importance ?? .none
-            if left == right {
-                return lhs.updatedAt < rhs.updatedAt
+            if lhs.updatedAt == rhs.updatedAt {
+                let left = K811AgentPattern.pattern(for: lhs.signal.kind)?.importance ?? .none
+                let right = K811AgentPattern.pattern(for: rhs.signal.kind)?.importance ?? .none
+                return left < right
             }
-            return left < right
+            return lhs.updatedAt < rhs.updatedAt
         }?.signal
     }
 }

@@ -51,7 +51,9 @@ All four run at full brightness (255). Severity is carried by colour and pulse c
 - **Required sources:** Claude Code and Codex hooks work directly, including sessions launched inside Orca. Orca automations can call the universal `emit` command. Generic Orca terminal-idle/gate detection is intentionally not polled because that would require a resident watcher.
 - **Optional sources:** OpenCode has a bundled adapter. Pi and Antigravity can use the universal `emit` command when a supported hook becomes available.
 
-The helper stays alive only for the bounded pulse sequence (under two seconds for the built-in patterns), leaves the final fixed color on the keyboard, and exits. It keeps only `source`, `event`, opaque `session`, and timestamp under `~/Library/Application Support/K811 Studio/agent-state.json`. The directory and files are user-only (`0700`/`0600`), updates are serialized with a file lock, and state is saved only after the HID transaction succeeds. Records older than 24 hours are pruned on the next hook. The highest-severity pending event wins; clearing it restores the next event below it.
+The helper stays alive only for the bounded pulse sequence (under two seconds for the built-in patterns), leaves the final fixed color on the keyboard, and exits. It keeps only `source`, `event`, opaque `session`, and timestamp under `~/Library/Application Support/K811 Studio/agent-state.json`. The directory and files are user-only (`0700`/`0600`), updates are serialized with a file lock, and state is saved only after the HID transaction succeeds. Records older than 24 hours are pruned on the next hook. The most recent event is the one on the keyboard; clearing it restores the next most recent one still pending.
+
+The light reports the last thing that happened, and the state file remembers what is still waiting. Ranking by severity instead would mean an unanswered approval keeps the keyboard orange, so a completion arriving underneath it only re-pulses orange and says nothing about the turn that just ended. The cost of choosing recency is real and deliberate: a completion does cover a pending approval, and only the state file still knows the approval is there.
 
 ### When the light goes out
 
@@ -105,7 +107,7 @@ Codex has no event that says "the agent is asking you something", so it guesses 
 
 Every clear is scoped to the session that emitted it. `SessionEnd` exists for exactly one reason: with session-scoped clears, a session that is simply closed would otherwise leave its light on forever — the 24-hour prune only runs when some later hook fires. Codex and OpenCode have no session-end event, so a closed session there is retired by the next `SessionStart`/`UserPromptSubmit` in that same session, or by `k811-agent-event clear --all`.
 
-An unattended source is exactly what this rule cannot retire. A scheduled job that fails on its own session ID never emits another hook for that session, so its failure — the top of the severity ranking — outranks every later completion, question, and approval until the 24-hour prune reaches it. A job that fails more often than once a day therefore pins the keyboard red and hides every other signal. That is why K811 Studio only accepts sources with an interactive session behind them.
+An unattended source is exactly what this rule cannot retire. A scheduled job that fails on its own session ID never emits another hook for that session, so its failure sits in the state file until the 24-hour prune reaches it. Under the severity ranking this project used to apply, one job failing every fifteen minutes pinned the keyboard red and hid every other signal. Recency removes that specific failure, but the record still accumulates, so K811 Studio only accepts sources with an interactive session behind them.
 
 After building and copying the app to `/Applications`, preview and install hooks without replacing existing handlers:
 

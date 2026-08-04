@@ -101,16 +101,33 @@ final class K811AgentStateTests: XCTestCase {
         XCTAssertEqual(state.activeSignal?.source, .codex)
     }
 
-    // MARK: - 심각도 우선순위
+    // MARK: - 조명에 올릴 신호 고르기
 
-    func testHighestSeverityWinsAndClearingItRestoresTheNextOne() {
+    func testMostRecentSignalWinsEvenWhenItIsLessSevere() {
+        var state = K811AgentState()
+        state.apply(K811AgentSignal(source: .claude, kind: .approval, sessionID: "waiting"), at: now)
+        XCTAssertEqual(state.activeSignal?.kind, .approval)
+
+        // 승인이 안 풀린 동안 다른 세션이 끝났다. 조명은 방금 일어난 일을 말해야 한다.
+        state.apply(
+            K811AgentSignal(source: .claude, kind: .completed, sessionID: "done"),
+            at: now.addingTimeInterval(1))
+        XCTAssertEqual(state.activeSignal?.kind, .completed)
+
+        // 승인은 사라지지 않았다. 최근 신호가 해제되면 다시 드러난다.
+        state.apply(
+            K811AgentSignal(source: .claude, kind: .clear, sessionID: "done"),
+            at: now.addingTimeInterval(2))
+        XCTAssertEqual(state.activeSignal?.kind, .approval)
+        XCTAssertEqual(state.activeSignal?.sessionID, "waiting")
+    }
+
+    func testSameInstantFallsBackToSeverity() {
         var state = K811AgentState()
         state.apply(K811AgentSignal(source: .claude, kind: .completed, sessionID: "a"), at: now)
-        state.apply(K811AgentSignal(source: .claude, kind: .failure, sessionID: "b"), at: now)
-        XCTAssertEqual(state.activeSignal?.kind, .failure)
+        state.apply(K811AgentSignal(source: .codex, kind: .failure, sessionID: "b"), at: now)
 
-        state.apply(K811AgentSignal(source: .claude, kind: .clear, sessionID: "b"), at: now)
-        XCTAssertEqual(state.activeSignal?.kind, .completed)
+        XCTAssertEqual(state.activeSignal?.kind, .failure)
     }
 
     // MARK: - 최전면 판정에 쓰는 조상 추적
