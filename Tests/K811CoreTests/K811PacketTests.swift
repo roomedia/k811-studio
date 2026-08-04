@@ -691,34 +691,12 @@ final class K811PacketTests: XCTestCase {
     XCTAssertFalse(encoded.contains("prompt"))
   }
 
-  func testHermesLifecycleHooksMapToAgentSignals() {
-    XCTAssertEqual(K811AgentSource.hermes.displayName, "Hermes Agent")
-    XCTAssertTrue(K811AgentSource.hermes.isRequired)
+  func testRequiredSourcesAreTheOnesWithDirectHooks() {
     XCTAssertEqual(
-      K811AgentSignal.hermesHook(eventName: "pre_llm_call", sessionID: "turn-1"),
-      K811AgentSignal(source: .hermes, kind: .clear, sessionID: "turn-1"))
-    XCTAssertEqual(
-      K811AgentSignal.hermesHook(
-        eventName: "post_llm_call",
-        sessionID: "turn-1",
-        assistantResponse: "확인해줄래?"),
-      K811AgentSignal(source: .hermes, kind: .question, sessionID: "turn-1"))
-    XCTAssertEqual(
-      K811AgentSignal.hermesHook(
-        eventName: "post_llm_call",
-        sessionID: "turn-1",
-        assistantResponse: "완료했습니다."),
-      K811AgentSignal(source: .hermes, kind: .completed, sessionID: "turn-1"))
-    XCTAssertEqual(
-      K811AgentSignal.hermesHook(eventName: "pre_approval_request", sessionID: "turn-1"),
-      K811AgentSignal(source: .hermes, kind: .approval, sessionID: "turn-1"))
-    XCTAssertEqual(
-      K811AgentSignal.hermesHook(eventName: "post_approval_response", sessionID: "turn-1"),
-      K811AgentSignal(source: .hermes, kind: .clear, sessionID: "turn-1"))
-    XCTAssertEqual(
-      K811AgentSignal.hermesHook(eventName: "api_request_error", sessionID: "turn-1"),
-      K811AgentSignal(source: .hermes, kind: .failure, sessionID: "turn-1"))
-    XCTAssertNil(K811AgentSignal.hermesHook(eventName: "pre_tool_call", sessionID: "turn-1"))
+      K811AgentSource.allCases.filter(\.isRequired),
+      [.orca, .claude, .codex])
+    XCTAssertEqual(K811AgentSource.claude.displayName, "Claude Code")
+    XCTAssertNil(K811AgentSource(rawValue: "hermes"))
   }
 
   func testAgentStateKeepsHighestImportanceAndRestoresLowerSignalsOnClear() {

@@ -531,7 +531,6 @@ private struct AgentSettingsView: View {
             .foregroundStyle(.secondary)
           HStack(spacing: 16) {
             AgentSourceBadge(name: "Orca")
-            AgentSourceBadge(name: "Hermes")
             AgentSourceBadge(name: "Claude Code")
             AgentSourceBadge(name: "Codex")
           }
@@ -549,7 +548,7 @@ private struct AgentSettingsView: View {
       }
 
       Text(
-        "Hermes·Claude·Codex·OpenCode hook이 transient helper를 실행해 K811을 직접 connect → write → disconnect합니다. 최초 1회 scripts/install-agent-hooks.py --apply 실행 후 agent를 재시작해야 합니다. 앱·daemon은 필요 없습니다. Orca에서 실행한 Claude/Codex도 같은 hook을 사용하며, Orca automation·Pi·Antigravity는 공통 CLI adapter를 연결할 수 있습니다."
+        "Claude·Codex·OpenCode hook이 transient helper를 실행해 K811을 직접 connect → write → disconnect합니다. 최초 1회 scripts/install-agent-hooks.py --apply 실행 후 agent를 재시작해야 합니다. 앱·daemon은 필요 없습니다. Orca에서 실행한 Claude/Codex도 같은 hook을 사용하며, Orca automation·Pi·Antigravity는 공통 CLI adapter를 연결할 수 있습니다."
       )
       .font(.caption)
       .foregroundStyle(.secondary)

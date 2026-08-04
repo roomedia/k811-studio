@@ -7,12 +7,10 @@ import argparse
 import json
 import os
 from pathlib import Path
-import shutil
-import subprocess
 import tempfile
 
 DEFAULT_APP = Path("/Applications/K811 Studio.app")
-AGENT_SOURCES = ("claude", "codex", "opencode", "hermes")
+AGENT_SOURCES = ("claude", "codex", "opencode")
 
 
 def hook_group(command: str, matcher: str | None = None) -> dict:
@@ -71,15 +69,6 @@ def write_json_atomically(path: Path, value: dict) -> None:
     os.replace(temporary_path, path)
 
 
-def write_text_atomically(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False) as temporary:
-        temporary.write(value)
-        temporary_path = Path(temporary.name)
-    os.chmod(temporary_path, 0o600)
-    os.replace(temporary_path, path)
-
-
 def opencode_plugin(helper: Path) -> str:
     helper_literal = json.dumps(str(helper))
     return f'''// Managed by K811 Studio's install-agent-hooks.py.
@@ -133,7 +122,6 @@ def main() -> int:
     mode.add_argument("--apply", action="store_true", help="write hook configuration")
     mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
     parser.add_argument("--app", type=Path, default=DEFAULT_APP)
-    parser.add_argument("--hermes", type=Path, help="Hermes CLI path (default: discover on PATH)")
     parser.add_argument(
         "--source",
         action="append",
@@ -147,23 +135,10 @@ def main() -> int:
     if not helper.is_file() or not os.access(helper, os.X_OK):
         parser.error(f"missing executable helper: {helper}")
 
-    hermes = args.hermes or (Path(command) if (command := shutil.which("hermes")) else None)
-    if args.apply and "hermes" in selected_sources and hermes is None:
-        parser.error("Hermes CLI was not found on PATH; pass --hermes")
-
-    repository_root = Path(__file__).resolve().parents[1]
-    hermes_source = repository_root / "integrations/hermes/k811-agent-light"
-    hermes_files = {
-        name: (hermes_source / name).read_text(encoding="utf-8")
-        for name in ("plugin.yaml", "__init__.py")
-    }
-
     home = Path.home()
-    hermes_home = Path(os.environ.get("HERMES_HOME", home / ".hermes")).expanduser()
     claude_path = home / ".claude/settings.json"
     codex_path = home / ".codex/hooks.json"
     opencode_path = home / ".config/opencode/plugins/k811-agent-light.js"
-    hermes_path = hermes_home / "plugins/k811-agent-light"
     marker = "k811-agent-event"
 
     claude = load_json(claude_path)
@@ -202,12 +177,6 @@ def main() -> int:
     opencode_changed = "opencode" in selected_sources and (
         not opencode_path.exists() or opencode_path.read_text() != plugin_contents
     )
-    hermes_changed = "hermes" in selected_sources and any(
-        not (hermes_path / name).exists()
-        or (hermes_path / name).read_text(encoding="utf-8") != contents
-        for name, contents in hermes_files.items()
-    )
-
     receipt = {
         "apply": bool(args.apply),
         "selected_sources": sorted(selected_sources),
@@ -218,18 +187,6 @@ def main() -> int:
             "requires_hook_trust_review": bool(codex_changes),
         },
         "opencode": {"path": str(opencode_path), "changed": opencode_changed},
-        "hermes": {
-            "path": str(hermes_path),
-            "changed": hermes_changed,
-            "enable_command": [
-                str(hermes) if hermes is not None else "hermes",
-                "plugins",
-                "enable",
-                "--no-allow-tool-override",
-                "k811-agent-light",
-            ],
-            "restart_required": True,
-        },
     }
 
     if args.apply:
@@ -241,22 +198,6 @@ def main() -> int:
             opencode_path.parent.mkdir(parents=True, exist_ok=True)
             opencode_path.write_text(plugin_contents)
             os.chmod(opencode_path, 0o600)
-        if "hermes" in selected_sources:
-            if hermes_changed:
-                for name, contents in hermes_files.items():
-                    write_text_atomically(hermes_path / name, contents)
-            subprocess.run(
-                [
-                    str(hermes),
-                    "plugins",
-                    "enable",
-                    "--no-allow-tool-override",
-                    "k811-agent-light",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
 
     print(json.dumps(receipt, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

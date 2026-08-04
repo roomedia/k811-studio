@@ -10,46 +10,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "scripts/install-agent-hooks.py"
-PLUGIN_SOURCE = ROOT / "integrations/hermes/k811-agent-light"
+
+
+def fake_app(root: Path) -> Path:
+    app = root / "K811 Studio.app"
+    helper = app / "Contents/Helpers/k811-agent-event"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    helper.chmod(helper.stat().st_mode | stat.S_IXUSR)
+    return app
 
 
 class InstallAgentHooksTests(unittest.TestCase):
-    def test_installs_and_enables_hermes_plugin_idempotently(self) -> None:
+    def test_installs_every_source_idempotently(self) -> None:
         with tempfile.TemporaryDirectory(prefix="k811-hook-installer-") as directory:
             root = Path(directory)
             home = root / "home"
-            app = root / "K811 Studio.app"
-            helper = app / "Contents/Helpers/k811-agent-event"
-            helper.parent.mkdir(parents=True)
-            helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            helper.chmod(helper.stat().st_mode | stat.S_IXUSR)
-
-            hermes_receipt = root / "hermes-args.json"
-            fake_hermes = root / "hermes"
-            fake_hermes.write_text(
-                "#!/usr/bin/env python3\n"
-                "import json, os, sys\n"
-                "with open(os.environ['K811_TEST_HERMES_RECEIPT'], 'w') as output:\n"
-                "    json.dump(sys.argv[1:], output)\n",
-                encoding="utf-8",
-            )
-            fake_hermes.chmod(fake_hermes.stat().st_mode | stat.S_IXUSR)
+            app = fake_app(root)
 
             environment = dict(os.environ)
-            environment.update(
-                {
-                    "HOME": str(home),
-                    "HERMES_HOME": str(home / ".hermes"),
-                    "K811_TEST_HERMES_RECEIPT": str(hermes_receipt),
-                }
-            )
-            command = [
-                str(INSTALLER),
-                "--app",
-                str(app),
-                "--hermes",
-                str(fake_hermes),
-            ]
+            environment["HOME"] = str(home)
+            command = [str(INSTALLER), "--app", str(app)]
 
             preview = subprocess.run(
                 [*command, "--dry-run"],
@@ -60,9 +41,9 @@ class InstallAgentHooksTests(unittest.TestCase):
             )
             preview_receipt = json.loads(preview.stdout)
             self.assertFalse(preview_receipt["apply"])
-            self.assertTrue(preview_receipt["hermes"]["changed"])
-            self.assertFalse((home / ".hermes/plugins/k811-agent-light").exists())
-            self.assertFalse(hermes_receipt.exists())
+            self.assertTrue(preview_receipt["opencode"]["changed"])
+            self.assertFalse((home / ".claude").exists())
+            self.assertFalse((home / ".codex").exists())
 
             applied = subprocess.run(
                 [*command, "--apply"],
@@ -73,18 +54,15 @@ class InstallAgentHooksTests(unittest.TestCase):
             )
             applied_receipt = json.loads(applied.stdout)
             self.assertTrue(applied_receipt["apply"])
-            self.assertTrue(applied_receipt["hermes"]["changed"])
             self.assertEqual(
-                ["plugins", "enable", "--no-allow-tool-override", "k811-agent-light"],
-                json.loads(hermes_receipt.read_text(encoding="utf-8")),
+                ["Notification", "UserPromptSubmit", "SessionStart", "SessionEnd", "Stop", "StopFailure"],
+                applied_receipt["claude"]["events_added"],
             )
-
-            installed = home / ".hermes/plugins/k811-agent-light"
-            for name in ("plugin.yaml", "__init__.py"):
-                self.assertEqual(
-                    (PLUGIN_SOURCE / name).read_text(encoding="utf-8"),
-                    (installed / name).read_text(encoding="utf-8"),
-                )
+            self.assertEqual(
+                ["PermissionRequest", "UserPromptSubmit", "SessionStart", "Stop"],
+                applied_receipt["codex"]["events_added"],
+            )
+            self.assertTrue((home / ".config/opencode/plugins/k811-agent-light.js").is_file())
 
             repeated = subprocess.run(
                 [*command, "--apply"],
@@ -94,7 +72,6 @@ class InstallAgentHooksTests(unittest.TestCase):
                 env=environment,
             )
             repeated_receipt = json.loads(repeated.stdout)
-            self.assertFalse(repeated_receipt["hermes"]["changed"])
             self.assertEqual([], repeated_receipt["claude"]["events_added"])
             self.assertEqual([], repeated_receipt["codex"]["events_added"])
             self.assertFalse(repeated_receipt["opencode"]["changed"])
@@ -103,27 +80,17 @@ class InstallAgentHooksTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="k811-hook-scope-") as directory:
             root = Path(directory)
             home = root / "home"
-            app = root / "K811 Studio.app"
-            helper = app / "Contents/Helpers/k811-agent-event"
-            helper.parent.mkdir(parents=True)
-            helper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            helper.chmod(helper.stat().st_mode | stat.S_IXUSR)
-
-            fake_hermes = root / "hermes"
-            fake_hermes.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            fake_hermes.chmod(fake_hermes.stat().st_mode | stat.S_IXUSR)
+            app = fake_app(root)
             environment = dict(os.environ)
-            environment.update({"HOME": str(home), "HERMES_HOME": str(home / ".hermes")})
+            environment["HOME"] = str(home)
 
             result = subprocess.run(
                 [
                     str(INSTALLER),
                     "--app",
                     str(app),
-                    "--hermes",
-                    str(fake_hermes),
                     "--source",
-                    "hermes",
+                    "opencode",
                     "--apply",
                 ],
                 check=True,
@@ -132,11 +99,26 @@ class InstallAgentHooksTests(unittest.TestCase):
                 env=environment,
             )
             receipt = json.loads(result.stdout)
-            self.assertEqual(["hermes"], receipt["selected_sources"])
-            self.assertTrue((home / ".hermes/plugins/k811-agent-light/plugin.yaml").exists())
+            self.assertEqual(["opencode"], receipt["selected_sources"])
+            self.assertTrue((home / ".config/opencode/plugins/k811-agent-light.js").is_file())
             self.assertFalse((home / ".claude").exists())
             self.assertFalse((home / ".codex").exists())
-            self.assertFalse((home / ".config/opencode").exists())
+
+    def test_hermes_is_no_longer_an_installable_source(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="k811-hook-hermes-") as directory:
+            root = Path(directory)
+            app = fake_app(root)
+            environment = dict(os.environ)
+            environment["HOME"] = str(root / "home")
+
+            result = subprocess.run(
+                [str(INSTALLER), "--app", str(app), "--source", "hermes", "--dry-run"],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("hermes", result.stderr)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ import Foundation
 
 public enum K811AgentSource: String, CaseIterable, Codable, Identifiable, Sendable {
     case orca
-    case hermes
     case claude
     case codex
     case opencode
@@ -15,7 +14,6 @@ public enum K811AgentSource: String, CaseIterable, Codable, Identifiable, Sendab
     public var displayName: String {
         switch self {
         case .orca: "Orca"
-        case .hermes: "Hermes Agent"
         case .claude: "Claude Code"
         case .codex: "Codex"
         case .opencode: "OpenCode"
@@ -27,7 +25,7 @@ public enum K811AgentSource: String, CaseIterable, Codable, Identifiable, Sendab
 
     public var isRequired: Bool {
         switch self {
-        case .orca, .hermes, .claude, .codex: true
+        case .orca, .claude, .codex: true
         case .opencode, .pi, .antigravity, .custom: false
         }
     }
@@ -137,27 +135,5 @@ public struct K811AgentSignal: Equatable, Codable, Sendable {
 
     public var key: String {
         "\(source.rawValue):\(sessionID ?? "global")"
-    }
-
-    public static func hermesHook(
-        eventName: String,
-        sessionID: String?,
-        assistantResponse: String? = nil
-    ) -> K811AgentSignal? {
-        let kind: K811AgentEventKind
-        switch eventName {
-        case "pre_llm_call", "on_session_start", "post_approval_response":
-            kind = .clear
-        case "post_llm_call":
-            let suffix = String((assistantResponse ?? "").suffix(400))
-            kind = suffix.contains("?") || suffix.contains("？") ? .question : .completed
-        case "pre_approval_request":
-            kind = .approval
-        case "api_request_error":
-            kind = .failure
-        default:
-            return nil
-        }
-        return K811AgentSignal(source: .hermes, kind: kind, sessionID: sessionID)
     }
 }

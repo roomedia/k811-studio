@@ -48,7 +48,7 @@ All four run at full brightness (255). Severity is carried by colour and pulse c
 - **Approval:** hardware-calibrated orange, four pulses, then solid.
 - **Failure:** red, six fast pulses, then solid.
 - **Clear / acknowledgement:** fixed black and no pending state.
-- **Required sources:** Hermes Agent, Claude Code, and Codex hooks work directly, including sessions launched inside Orca. Orca automations can call the universal `emit` command. Generic Orca terminal-idle/gate detection is intentionally not polled because that would require a resident watcher.
+- **Required sources:** Claude Code and Codex hooks work directly, including sessions launched inside Orca. Orca automations can call the universal `emit` command. Generic Orca terminal-idle/gate detection is intentionally not polled because that would require a resident watcher.
 - **Optional sources:** OpenCode has a bundled adapter. Pi and Antigravity can use the universal `emit` command when a supported hook becomes available.
 
 The helper stays alive only for the bounded pulse sequence (under two seconds for the built-in patterns), leaves the final fixed color on the keyboard, and exits. It keeps only `source`, `event`, opaque `session`, and timestamp under `~/Library/Application Support/K811 Studio/agent-state.json`. The directory and files are user-only (`0700`/`0600`), updates are serialized with a file lock, and state is saved only after the HID transaction succeeds. Records older than 24 hours are pruned on the next hook. The highest-severity pending event wins; clearing it restores the next event below it.
@@ -97,17 +97,15 @@ Both apply to hook-driven signals. The `emit` command stays unconditional so man
 | Codex | `PermissionRequest` | approval |
 | | `Stop` | question when the reply ends in one, otherwise completion |
 | | `UserPromptSubmit`, `SessionStart` | clear |
-| Hermes | `pre_approval_request` | approval |
-| | `post_llm_call` | question when the reply ends in one, otherwise completion |
-| | `api_request_error` | failure |
-| | `pre_llm_call`, `on_session_start`, `post_approval_response` | clear |
 | OpenCode | `permission.asked` | approval |
 | | `session.idle` / `session.error` | completion / failure |
 | | `permission.replied`, `session.status` = busy | clear |
 
-Codex and Hermes have no event that says "the agent is asking you something", so they guess from a question mark at the end of the reply. Claude Code does not need that guess — it raises questions and approvals as their own `Notification` events — so its `Stop` always means completion. Applying the same heuristic there would paint an ordinary answer containing a question mark as a question.
+Codex has no event that says "the agent is asking you something", so it guesses from a question mark at the end of the reply. Claude Code does not need that guess — it raises questions and approvals as their own `Notification` events — so its `Stop` always means completion. Applying the same heuristic there would paint an ordinary answer containing a question mark as a question.
 
 Every clear is scoped to the session that emitted it. `SessionEnd` exists for exactly one reason: with session-scoped clears, a session that is simply closed would otherwise leave its light on forever — the 24-hour prune only runs when some later hook fires. Codex and OpenCode have no session-end event, so a closed session there is retired by the next `SessionStart`/`UserPromptSubmit` in that same session, or by `k811-agent-event clear --all`.
+
+An unattended source is exactly what this rule cannot retire. A scheduled job that fails on its own session ID never emits another hook for that session, so its failure — the top of the severity ranking — outranks every later completion, question, and approval until the 24-hour prune reaches it. A job that fails more often than once a day therefore pins the keyboard red and hides every other signal. That is why K811 Studio only accepts sources with an interactive session behind them.
 
 After building and copying the app to `/Applications`, preview and install hooks without replacing existing handlers:
 
@@ -115,8 +113,6 @@ After building and copying the app to `/Applications`, preview and install hooks
 scripts/install-agent-hooks.py --dry-run
 scripts/install-agent-hooks.py --apply
 ```
-
-The installer copies and enables the `k811-agent-light` Hermes plugin without granting tool-override permission. Restart an already-running Hermes CLI or gateway after installation so it discovers the new plugin.
 
 Codex hashes non-managed command hooks. After installation, review and trust the new K811 handler once with `/hooks` inside Codex; the installer does not bypass that security gate.
 

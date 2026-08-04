@@ -25,18 +25,11 @@ private struct HookPayload {
     var sessionID: String? { values["session_id"] as? String }
     var lastAssistantMessage: String? { values["last_assistant_message"] as? String }
     var notificationMessage: String? { values["message"] as? String }
-    private var extra: [String: Any] { values["extra"] as? [String: Any] ?? [:] }
-    var hermesSessionID: String? {
-        let direct = sessionID?.isEmpty == false ? sessionID : nil
-        let sessionKey = extra["session_key"] as? String
-        return direct ?? (sessionKey?.isEmpty == false ? sessionKey : nil)
-    }
-    var hermesAssistantResponse: String? { extra["assistant_response"] as? String }
 }
 
 private func sourceIsEnabled(_ source: K811AgentSource) -> Bool {
     switch source {
-    case .orca, .hermes, .claude, .codex, .custom:
+    case .orca, .claude, .codex, .custom:
         true
     case .opencode:
         UserDefaults(suiteName: "com.local.k811studio")?.bool(forKey: "agentSourceOpenCode") == true
@@ -186,7 +179,7 @@ private func claudeSignal(from payload: HookPayload) -> K811AgentSignal? {
         kind = .clear
     case "StopFailure":
         kind = .failure
-    // Codex·Hermes 는 종료 시점에 질문 여부를 알 길이 없어 응답 끝의 물음표로 추측하지만,
+    // Codex 는 종료 시점에 질문 여부를 알 길이 없어 응답 끝의 물음표로 추측하지만,
     // Claude 는 질문·승인을 Notification 으로 따로 보내주므로 추측할 이유가 없다.
     // 여기서 같은 추측을 하면 물음표가 섞인 보통 응답까지 질문으로 잡힌다.
     case "Stop":
@@ -235,15 +228,6 @@ private func codexSignal(from payload: HookPayload) -> K811AgentSignal? {
     return kind.map {
         K811AgentSignal(source: .codex, kind: $0, sessionID: payload.sessionID)
     }
-}
-
-private func hermesSignal(from payload: HookPayload) -> K811AgentSignal? {
-    guard let eventName = payload.hookEventName else { return nil }
-    return K811AgentSignal.hermesHook(
-        eventName: eventName,
-        sessionID: payload.hermesSessionID,
-        assistantResponse: payload.hermesAssistantResponse
-    )
 }
 
 private func value(after name: String, in arguments: [String]) -> String? {
@@ -298,14 +282,13 @@ private func run() throws {
 
     case "hook":
         guard arguments.count >= 2 else {
-            throw Exit.usage("hook requires claude, codex, or hermes")
+            throw Exit.usage("hook requires claude or codex")
         }
         let payload = try HookPayload()
         let signal: K811AgentSignal?
         switch arguments[1] {
         case "claude": signal = claudeSignal(from: payload)
         case "codex": signal = codexSignal(from: payload)
-        case "hermes": signal = hermesSignal(from: payload)
         default: throw Exit.usage("unsupported hook source: \(arguments[1])")
         }
         // 이 훅을 띄운 터미널을 사용자가 보고 있으면 알릴 이유가 없다.
@@ -350,7 +333,7 @@ private func run() throws {
     case "--help", "help":
         print("""
         k811-agent-event emit --source SOURCE --event EVENT [--session ID]
-        k811-agent-event hook claude|codex|hermes
+        k811-agent-event hook claude|codex
         k811-agent-event clear --all
         k811-agent-event expire --key KEY                   (내부용: 완료 알림 자동 소등)
 
