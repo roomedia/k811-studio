@@ -76,6 +76,33 @@ def _contains_device(node: object) -> bool:
     return _contains_device(node.get("IORegistryEntryChildren", []))
 
 
+def sleep_windows(hours: float) -> list[datetime]:
+    """되짚는 구간 안의 잠자기 시각.
+
+    잠자기 동안에는 통합 로그가 커널 메시지를 남기지 않는다. 실측하면 잠자기 전후로
+    장치 노드가 새로 만들어졌는데도(sessionID 변경) 이탈·열거 기록은 한 줄도 없었다.
+    그래서 잠자기가 끼어 있으면 '이탈 0건'을 근거로 쓸 수 없다는 것을 알려야 한다.
+    """
+    try:
+        listing = subprocess.run(
+            ["pmset", "-g", "log"], capture_output=True, text=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return []
+
+    found: list[datetime] = []
+    for line in listing.splitlines():
+        fields = line.split()
+        if len(fields) < 4 or fields[3] != "Sleep":
+            continue
+        try:
+            at = datetime.strptime(" ".join(fields[:2]), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        found.append(at)
+    return found
+
+
 def read_events(hours: float) -> list[Event]:
     predicate = (
         'process == "kernel" AND ('
@@ -132,6 +159,14 @@ def report(events: list[Event], hours: float) -> int:
     print(f"# K811 USB 연결 이력 (최근 {hours:g}시간)")
     print(f"지금 버스에 있는가: {'예' if present else '아니오'}")
     print(f"떨어진 횟수: {len(drops)}")
+
+    slept = [at for at in sleep_windows(hours) if at >= datetime.now() - timedelta(hours=hours)]
+    if slept:
+        stamps = ", ".join(f"{at:%m-%d %H:%M}" for at in slept[-3:])
+        print(
+            f"\n주의: 이 구간에 잠자기가 있었다 ({stamps}). 잠자기 동안의 커널 메시지는"
+            " 남지 않으므로, 그때 일어난 이탈·열거는 아래 집계에 빠져 있다."
+        )
 
     if not drops:
         print("\n기록된 이탈이 없다. 로그 보존 기간을 넘겼거나 아직 재현되지 않았다.")
