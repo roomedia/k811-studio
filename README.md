@@ -39,6 +39,23 @@ scripts/build-app.sh
 open "dist/K811 Studio.app"
 ```
 
+## First install
+
+`scripts/build-app.sh` leaves the bundle in `dist/`, which is not where the hooks look for it. `scripts/install-agent-hooks.py` resolves the helper under `/Applications/K811 Studio.app` by default and refuses to run if it is not there, so copy the bundle first (`--app` overrides the location):
+
+```sh
+rm -rf "/Applications/K811 Studio.app"
+cp -R "dist/K811 Studio.app" /Applications/
+```
+
+Then, in order:
+
+1. Install the hooks. [Agent light hooks](#agent-light-hooks) has the preview/apply pair and the one-time Codex trust step.
+2. Install Karabiner-Elements, allowing its driver extension and input monitoring when its own setup asks for them. Then set up [`integrations/karabiner/`](integrations/karabiner/), device-grab setting included.
+3. Install Hammerspoon and grant it **Accessibility** in System Settings → Privacy & Security. Every click and cursor move here comes from a Hammerspoon event tap, and without that permission they fail silently rather than loudly. Then set up [`integrations/hammerspoon/`](integrations/hammerspoon/).
+
+The lighting and keymap client needs no Privacy & Security grant of its own. It opens the vendor-defined HID interface (`Usage Page 0xFF00`) rather than a keyboard or pointing interface, which is what input monitoring gates.
+
 ## Agent light hooks
 
 The app bundle includes `Contents/Helpers/k811-agent-event`, a transient local helper that writes directly to the K811 HID interface. It does not open a network port, require a resident app/daemon, or persist prompts and response text.
@@ -111,7 +128,7 @@ Every clear is scoped to the session that emitted it. `SessionEnd` exists for ex
 
 An unattended source is exactly what this rule cannot retire. A scheduled job that fails on its own session ID never emits another hook for that session, so its failure sits in the state file until the 24-hour prune reaches it. Under the severity ranking this project used to apply, one job failing every fifteen minutes pinned the keyboard red and hid every other signal. Recency removes that specific failure, but the record still accumulates, so K811 Studio only accepts sources with an interactive session behind them.
 
-After building and copying the app to `/Applications`, preview and install hooks without replacing existing handlers:
+Preview and install hooks without replacing existing handlers:
 
 ```sh
 scripts/install-agent-hooks.py --dry-run

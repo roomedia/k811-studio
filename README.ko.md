@@ -39,6 +39,23 @@ scripts/build-app.sh
 open "dist/K811 Studio.app"
 ```
 
+## 처음 설치
+
+`scripts/build-app.sh`는 번들을 `dist/`에 남기는데 훅이 보는 자리는 거기가 아니다. `scripts/install-agent-hooks.py`는 헬퍼를 기본적으로 `/Applications/K811 Studio.app` 아래에서 찾고 없으면 실행을 거부하므로 번들을 먼저 복사한다(`--app`으로 위치를 바꿀 수 있다).
+
+```sh
+rm -rf "/Applications/K811 Studio.app"
+cp -R "dist/K811 Studio.app" /Applications/
+```
+
+그다음 순서대로 한다.
+
+1. 훅을 설치한다. 미리 보기와 적용, Codex에서 한 번 해 주는 신뢰 처리는 [에이전트 불빛 훅](#에이전트-불빛-훅)에 있다.
+2. Karabiner-Elements를 설치한다. 설치 과정이 요구하는 드라이버 확장 허용과 입력 모니터링 권한을 그때 준다. 그다음 [`integrations/karabiner/`](integrations/karabiner/)를 설정한다. 장치 grab 설정을 빼먹지 말 것.
+3. Hammerspoon을 설치하고 시스템 설정 → 개인 정보 보호 및 보안에서 **손쉬운 사용** 권한을 준다. 여기의 클릭과 커서 이동은 전부 Hammerspoon eventtap이 만드는 것이고 이 권한이 없으면 요란하게 실패하는 대신 조용히 안 된다. 그다음 [`integrations/hammerspoon/`](integrations/hammerspoon/)을 설정한다.
+
+조명·키맵 클라이언트는 따로 권한을 받지 않는다. 입력 모니터링이 막는 키보드나 포인팅 인터페이스가 아니라 벤더가 정의한 HID 인터페이스(`Usage Page 0xFF00`)를 열기 때문이다.
+
 ## 에이전트 불빛 훅
 
 앱 번들에는 `Contents/Helpers/k811-agent-event`가 들어 있다. K811 HID 인터페이스에 직접 쓰는, 잠깐 떴다 사라지는 로컬 헬퍼다. 네트워크 포트를 열지 않고 상주 앱이나 데몬을 요구하지 않으며 프롬프트와 응답 텍스트를 남기지 않는다.
@@ -111,7 +128,7 @@ Codex에는 "에이전트가 무언가 묻고 있다"고 말해 주는 사건이
 
 이 규칙으로 회수할 수 없는 것이 사람 없이 도는 소스다. 자기 세션 ID로 실패한 예약 작업은 그 세션에 다시 훅을 내지 않으므로 실패가 24시간 정리에 걸릴 때까지 상태 파일에 남는다. 이 프로젝트가 예전에 쓰던 심각도 순위에서는 15분마다 실패하는 작업 하나가 키보드를 빨강으로 못 박고 다른 신호를 전부 가렸다. 최신순은 그 특정 실패를 밀어내지만 기록은 계속 쌓이므로 K811 Studio는 사람이 붙은 세션이 있는 소스만 받는다.
 
-앱을 빌드해 `/Applications`에 복사한 뒤 기존 핸들러를 덮지 않고 훅을 미리 보고 설치한다.
+기존 핸들러를 덮지 않고 훅을 미리 보고 설치한다.
 
 ```sh
 scripts/install-agent-hooks.py --dry-run
