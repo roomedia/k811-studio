@@ -1,5 +1,7 @@
 # K811 Studio for macOS
 
+**English** · [한국어](README.ko.md)
+
 Native macOS interoperability client for the K811 19-key macro keyboard (`VID 0x5566`, `PID 0x000A`).
 
 ## Current capability
@@ -7,7 +9,7 @@ Native macOS interoperability client for the K811 19-key macro keyboard (`VID 0x
 - Discovers only the vendor-defined HID interface (`Usage Page 0xFF00`, Usage `0x0001`).
 - Verifies 64-byte input/output report sizes before allowing a write.
 - Controls the documented hardware lighting modes with color, brightness, speed, and automatic color selection.
-- Adds an **에이전트** effect that stays dark at rest and signals completion, questions, approvals, and failures with ranked fixed-color pulse counts.
+- Adds an **에이전트** effect that stays dark at rest and signals completion, questions, approvals, and failures with fixed-color pulse counts.
 - Agent hooks open the HID interface, apply one bounded sequence of fixed-color firmware transactions, and disconnect. K811 Studio does not need to be running and never holds the device open while idle.
 - The GUI probes and releases the HID interface at startup; manual lighting changes are still explicit button actions.
 - Includes a read-only device probe, a 19-key base-map dump, and protocol unit tests.
@@ -41,7 +43,7 @@ open "dist/K811 Studio.app"
 
 The app bundle includes `Contents/Helpers/k811-agent-event`, a transient local helper that writes directly to the K811 HID interface. It does not open a network port, require a resident app/daemon, or persist prompts and response text.
 
-All four run at full brightness (255). Severity is carried by colour and pulse count, not by dimming — a notification exists to be noticed.
+Severity is carried by color and pulse count, not by dimming. All four signals stay at full brightness (255) — a notification exists to be noticed.
 
 - **Completion:** green, two pulses, then solid.
 - **Question:** blue, three pulses, then solid.
@@ -134,19 +136,23 @@ The implementation is an independent interoperability client based on:
 - The live K811 HID descriptors exposed by macOS.
 - Cross-checking the shared 64-byte lighting protocol against the public, non-commercial `Hthancder/Atas-K68D-Custom` reference.
 
-The vendor executable and extracted assets were kept locally for analysis only. They are not packaged into the macOS application and are not published in this repository: `work/` here contains the working notes and diagnostic scripts, while the samples, extracted references, captured evidence, and disassembly dumps stay on the analysis machine.
+The vendor executable and extracted assets were kept locally for analysis only. They are not packaged into the macOS application and are not published in this repository: `work/` here contains the handoff and the diagnostic scripts, while the samples, extracted references, captured evidence, and disassembly dumps stay on the analysis machine.
 
 The resulting protocol description — the interoperability output this project depends on — is in [`docs/protocol.md`](docs/protocol.md).
 
 ## Input remapping
 
-Besides the lighting and keymap client, this repository carries the host-side remapping that turns the K811 knob into a macro wheel and its joystick and media buttons into mouse actions.
+Besides the lighting and keymap client, this repository carries the host-side remapping that turns the K811 knob into a macro wheel and its joystick and media buttons into mouse actions. The client half needs nothing besides the app bundle; this half needs two host apps installed and running.
 
-| Component | Role |
-| --- | --- |
-| [`integrations/karabiner/`](integrations/karabiner/) | Device-scoped remaps. Translates the knob and media buttons to `f16`–`f20`, and documents the device-grab setting the K811 needs. |
-| [`integrations/hammerspoon/`](integrations/hammerspoon/) | Turns those keys into clicks, moves the cursor finely from the joystick while the wheel-click button is held, and drives a radial macro picker from the knob. Also holds a capture module for diagnosing what the device actually emits. |
+| Component | Host app | Role |
+| --- | --- | --- |
+| [`integrations/karabiner/`](integrations/karabiner/) | [Karabiner-Elements](https://karabiner-elements.pqrs.org/) | Device-scoped remaps. Translates the knob and media buttons to `f16`–`f20`, and documents the device-grab setting the K811 needs. |
+| [`integrations/hammerspoon/`](integrations/hammerspoon/) | [Hammerspoon](https://www.hammerspoon.org/) | Turns those keys into clicks, moves the cursor finely from the joystick while the wheel-click button is held, and drives a radial macro picker from the knob. Also holds a capture module for diagnosing what the device actually emits. |
 
-The split is not stylistic. Karabiner is the only side that can scope a rule to one device; Hammerspoon is the only side that can produce a fixed-pixel relative cursor move. Each integration's README explains its own constraints.
+Set Karabiner up first — Hammerspoon only ever sees the keys Karabiner produces. The split is not stylistic. Karabiner is the only side that can scope a rule to one device; Hammerspoon is the only side that can produce a fixed-pixel relative cursor move. Each integration's README explains its own constraints.
 
 The knob no longer moves the cursor. One notch opens a radial picker and each further notch advances one entry, wrapping at the end. Play or Return pastes the selected text; the previous-track button or Escape dismisses it without typing anything, and the keyboard keys are intercepted only while the picker is up. A rotary encoder reports direction and never position, so the picker drops its selection on close and always counts from the first entry — that is the only way "two notches" can always mean the same macro. Retiring the knob-and-button combination also retired the forced-release window that the old vertical cursor mode depended on, which was the least reliable judgement in the integration.
+
+### Dictation is assumed, not required
+
+Nothing here calls a speech-to-text app and nothing breaks without one — [Whispree](https://github.com/Arsture/whispree) in this setup, though any dictation app does. It is still worth having, because the macro wheel's default list was picked on the assumption that dictation is there: commands you can simply say out loud, such as `/review` or `/commit`, were left off the wheel on purpose, and what remains is the few client-side commands that talking to an agent cannot trigger. Without dictation that criterion is the wrong one, and three entries are too few to be worth a knob — fill the wheel with your own boilerplate in `~/.hammerspoon/init.lua` instead.
