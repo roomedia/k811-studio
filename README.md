@@ -140,11 +140,13 @@ The resulting protocol description — the interoperability output this project 
 
 ## Input remapping
 
-Besides the lighting and keymap client, this repository carries the host-side remapping that turns the K811 knob and media buttons into mouse actions.
+Besides the lighting and keymap client, this repository carries the host-side remapping that turns the K811 knob into a macro wheel and its joystick and media buttons into mouse actions.
 
 | Component | Role |
 | --- | --- |
 | [`integrations/karabiner/`](integrations/karabiner/) | Device-scoped remaps. Translates the knob and media buttons to `f16`–`f20`, and documents the device-grab setting the K811 needs. |
-| [`integrations/hammerspoon/`](integrations/hammerspoon/) | Turns those keys into cursor movement and clicks, and moves the cursor finely from the joystick while the wheel-click button is held. Also holds a capture module for diagnosing what the device actually emits. |
+| [`integrations/hammerspoon/`](integrations/hammerspoon/) | Turns those keys into clicks, moves the cursor finely from the joystick while the wheel-click button is held, and drives a radial macro picker from the knob. Also holds a capture module for diagnosing what the device actually emits. |
 
 The split is not stylistic. Karabiner is the only side that can scope a rule to one device; Hammerspoon is the only side that can produce a fixed-pixel relative cursor move. Each integration's README explains its own constraints.
+
+The knob no longer moves the cursor. One notch opens a radial picker and each further notch advances one entry, wrapping at the end. Play or Return pastes the selected text; the previous-track button or Escape dismisses it without typing anything, and the keyboard keys are intercepted only while the picker is up. A rotary encoder reports direction and never position, so the picker drops its selection on close and always counts from the first entry — that is the only way "two notches" can always mean the same macro. Retiring the knob-and-button combination also retired the forced-release window that the old vertical cursor mode depended on, which was the least reliable judgement in the integration.
