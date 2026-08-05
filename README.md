@@ -170,6 +170,22 @@ Set Karabiner up first — Hammerspoon only ever sees the keys Karabiner produce
 
 The knob no longer moves the cursor. One notch opens a radial picker and each further notch advances one entry, wrapping at the end. Play or Return pastes the selected text; the previous-track button or Escape dismisses it without typing anything, and the keyboard keys are intercepted only while the picker is up. A rotary encoder reports direction and never position, so the picker drops its selection on close and always counts from the first entry — that is the only way "two notches" can always mean the same macro. Retiring the knob-and-button combination also retired the forced-release window that the old vertical cursor mode depended on, which was the least reliable judgement in the integration.
 
+### Putting your own entries on the wheel
+
+The wheel ships three defaults. Your own list replaces them from `~/.hammerspoon/init.lua` rather than by editing the module: a later `cp` of a new module version would overwrite it, and this repository is public, so in-house boilerplate has no business living in it.
+
+```lua
+knobMapping = require('knob_mapping')
+knobMapping.start()
+
+knobMapping.wheel.macros = {
+  { short = "new", label = "/new", text = "/new" },
+  { short = "follow-up", text = "Hi " .. knobMapping.wheel.caret .. " — following up on this" },
+}
+```
+
+`⌘⌥R` reloads it. `short` is what the wedge shows, `label` what the center shows, `text` what gets pasted, and `caret` marks where the cursor should land afterwards. The field table, the caret's timing constant, and how to print the list currently loaded are in [`integrations/hammerspoon/`](integrations/hammerspoon/).
+
 ### Dictation is assumed, not required
 
 Nothing here calls a speech-to-text app and nothing breaks without one — [Whispree](https://github.com/Arsture/whispree) in this setup, though any dictation app does. It is still worth having, because the macro wheel's default list was picked on the assumption that dictation is there: commands you can simply say out loud, such as `/review` or `/commit`, were left off the wheel on purpose, and what remains is the few client-side commands that talking to an agent cannot trigger. Without dictation that criterion is the wrong one, and three entries are too few to be worth a knob — fill the wheel with your own boilerplate in `~/.hammerspoon/init.lua` instead.
